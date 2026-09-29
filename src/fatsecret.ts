@@ -161,7 +161,7 @@ export class FatSecretClient {
     params.format = "json";
     const signWithUser = useAccessToken && this.config.accessToken &&
       this.config.accessTokenSecret;
-    return this.signedRequest(
+    const result = await this.signedRequest(
       method,
       url,
       params,
@@ -169,5 +169,12 @@ export class FatSecretClient {
       useAccessToken ? this.config.accessTokenSecret : undefined,
       "FatSecret API error",
     );
+    // The REST API reports failures as HTTP 200 with an `error` object
+    if (result?.error) {
+      throw new Error(
+        `FatSecret API error: ${result.error.code} - ${result.error.message}`,
+      );
+    }
+    return result;
   }
 }

@@ -105,6 +105,10 @@ export const dataTools = [
           type: "string",
           description: "The serving ID for the food",
         },
+        foodEntryName: {
+          type: "string",
+          description: "Name shown in the diary (default: the food's name)",
+        },
         quantity: {
           type: "number",
           description: "Quantity of the serving",
@@ -291,7 +295,14 @@ export async function handleDataTool(
           date: dateToFatSecretFormat(args.date),
         },
       });
-    case "add_food_entry":
+    case "add_food_entry": {
+      // food_entry.create requires food_entry_name; default to the food's own name
+      const foodEntryName = args.foodEntryName ?? (await client.makeApiRequest(
+        "GET",
+        FATSECRET_API_URL,
+        { method: "food.get", food_id: args.foodId },
+        false,
+      )).food.food_name;
       return apiCall(client, {
         action: "add food entry",
         method: "POST",
@@ -299,6 +310,7 @@ export async function handleDataTool(
         params: {
           method: "food_entry.create",
           food_id: args.foodId,
+          food_entry_name: foodEntryName,
           serving_id: args.servingId,
           quantity: String(args.quantity),
           meal: args.mealType,
@@ -309,6 +321,7 @@ export async function handleDataTool(
             JSON.stringify(response, null, 2)
           }`,
       });
+    }
     case "check_auth_status":
       return checkAuthStatus(client);
     case "get_weight_month":
