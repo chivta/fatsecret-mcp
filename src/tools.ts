@@ -115,8 +115,8 @@ export const dataTools = [
         },
         mealType: {
           type: "string",
-          description: "Meal type (breakfast, lunch, dinner, snack)",
-          enum: ["breakfast", "lunch", "dinner", "snack"],
+          description: "Meal type (breakfast, lunch, dinner, other)",
+          enum: ["breakfast", "lunch", "dinner", "other"],
         },
         date: {
           type: "string",
@@ -312,7 +312,7 @@ export async function handleDataTool(
           food_id: args.foodId,
           food_entry_name: foodEntryName,
           serving_id: args.servingId,
-          quantity: String(args.quantity),
+          number_of_units: String(args.quantity),
           meal: args.mealType,
           date: dateToFatSecretFormat(args.date),
         },
