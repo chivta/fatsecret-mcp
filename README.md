@@ -443,3 +443,23 @@ fatsecret-mcp/
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Remote (claude.ai) mode
+
+`dist/http.js` serves the data tools over Streamable HTTP at `${PUBLIC_URL}/mcp`, protected by a built-in single-user OAuth 2.1 server (dynamic client registration, authorization code + PKCE, refresh tokens). The set_credentials / OAuth-flow tools and `~/.fatsecret-mcp-config.json` are not used in this mode; FatSecret credentials come from env only.
+
+Run it with `npm run build && npm run start:http`, or use the `production` stage of the `Dockerfile`. Variables are documented in `.example.env`:
+
+| Variable | Purpose |
+| --- | --- |
+| `CLIENT_ID`, `CLIENT_SECRET` | FatSecret app credentials |
+| `ACCESS_TOKEN`, `ACCESS_TOKEN_SECRET` | FatSecret user tokens |
+| `AUTH_PASSWORD` | Password for the login form shown on connect |
+| `PUBLIC_URL` | Public base URL (OAuth issuer), e.g. `https://fatsecret.example.com` |
+| `DATA_DIR` | Directory for `auth.db` (default `./data`) |
+| `PORT` | Listen port (default `8080`) |
+| `LOG_LEVEL` | pino level (default `info`) |
+
+Get `ACCESS_TOKEN` and `ACCESS_TOKEN_SECRET` by running `node dist/cli.js` locally and completing the FatSecret login. The values are written to `~/.fatsecret-mcp-config.json`.
+
+In claude.ai, add a custom connector with the URL `${PUBLIC_URL}/mcp` and enter `AUTH_PASSWORD` when prompted. `GET /health` and `GET /metrics` (Prometheus) need no auth.
