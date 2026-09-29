@@ -27,7 +27,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: fatsecret-mcp
-          image: ghcr.io/chivta/fatsecret-mcp:bc9bfead2e8427a7b90cf927994562745f720814
+          image: ghcr.io/chivta/fatsecret-mcp:3f9410e7ad1d33e5e0c8e34e89fe6c9b1a84c757
           ports:
             - name: http
               containerPort: 8080
