@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fatsecret-mcp
+  namespace: fatsecret
+  labels:
+    app: fatsecret-mcp
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  # The SQLite auth.db lives on a ReadWriteOnce volume, so the old pod must be
+  # gone before the new one starts. A rolling update would deadlock on the mount.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: fatsecret-mcp
+  template:
+    metadata:
+      labels:
+        app: fatsecret-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: fatsecret-mcp
+          image: ghcr.io/chivta/fatsecret-mcp:placeholder
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          env:
+            - name: PUBLIC_URL
+              value: https://fatsecret.chivtar.dev
+            - name: DATA_DIR
+              value: /data
+            - name: PORT
+              value: "8080"
+            - name: LOG_LEVEL
+              value: info
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: fatsecret-mcp
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+      imagePullSecrets:
+        - name: ghcr-secret

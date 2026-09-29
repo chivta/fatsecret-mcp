@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fatsecret-mcp
+  namespace: fatsecret
+  labels:
+    app: fatsecret-mcp
+spec:
+  selector:
+    matchLabels:
+      app: fatsecret-mcp
+  endpoints:
+    - port: http
+      path: /metrics
