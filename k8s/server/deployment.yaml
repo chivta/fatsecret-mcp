@@ -77,5 +77,3 @@ spec:
             claimName: fatsecret-mcp
         - name: tmp
           emptyDir: { sizeLimit: 64Mi }
-      imagePullSecrets:
-        - name: ghcr-secret
