@@ -17,7 +17,10 @@ export const FATSECRET_API_URL = "https://platform.fatsecret.com/rest/server.api
  * `config` is public and mutable: the stdio server updates it as credentials change.
  */
 export class FatSecretClient {
-  constructor(public config: FatSecretConfig) {}
+  constructor(
+    public config: FatSecretConfig,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
 
   private generateNonce(): string {
     return crypto.randomBytes(16).toString("hex");
@@ -123,7 +126,7 @@ export class FatSecretClient {
       options.body = querystring.stringify(allParams);
     }
 
-    const response = await fetch(requestUrl, options);
+    const response = await this.fetchImpl(requestUrl, options);
     const text = await response.text();
 
     if (!response.ok) {
@@ -135,6 +138,37 @@ export class FatSecretClient {
     } catch {
       return querystring.parse(text);
     }
+  }
+
+  /**
+   * OAuth1 JSON POST for path-only APIs. OAuth Core 1.0 §9.1.1 includes
+   * form-encoded bodies in the signature, not JSON. Send signed OAuth fields
+   * in the query and leave JSON values (including arrays/booleans) in the body.
+   */
+  async makeJsonApiRequest(url: string, body: Record<string, unknown>): Promise<any> {
+    const oauthParams: Record<string, string> = {
+      oauth_consumer_key: this.config.clientId,
+      oauth_nonce: this.generateNonce(),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: this.generateTimestamp(),
+      oauth_version: "1.0",
+    };
+    oauthParams.oauth_signature = this.generateSignature(
+      "POST", url, oauthParams, this.config.clientSecret,
+    );
+    const response = await this.fetchImpl(`${url}?${querystring.stringify(oauthParams)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`FatSecret API error: ${response.status} - ${await response.text()}`);
+    }
+    const result = await response.json() as any;
+    if (result?.error) {
+      throw new Error(`FatSecret API error: ${result.error.code} - ${result.error.message}`);
+    }
+    return result;
   }
 
   /** Request against the FatSecret OAuth endpoints (request/access token exchange). */

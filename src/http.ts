@@ -21,6 +21,7 @@ import { metricsRegistry } from "./metrics.js";
 import { FatSecretClient } from "./fatsecret.js";
 import { dataTools, handleDataTool } from "./tools.js";
 import { initAuthSchema, SingleUserOAuthProvider } from "./oauth.js";
+import { mcpJsonParser, mcpJsonPayloadTooLarge } from "./http-json.js";
 
 const MCP_PATH = "/mcp";
 const RESOURCE_NAME = "FatSecret";
@@ -103,7 +104,7 @@ const bearerAuth = requireBearerAuth({
   resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceUrl),
 });
 
-app.post(MCP_PATH, bearerAuth, express.json(), async (req, res) => {
+app.post(MCP_PATH, bearerAuth, mcpJsonParser, mcpJsonPayloadTooLarge, async (req: Request, res: Response) => {
   const server = createMcpServer();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

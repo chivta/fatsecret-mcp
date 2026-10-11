@@ -182,3 +182,45 @@ test("update_food_entry rejects empty updates without making a request", async (
   }
   assert.deepEqual(calls, []);
 });
+
+// Legacy operation coverage stays on the same method versions and argument spellings.
+for (const [name, args, method, userAuth, expected] of [
+  ["search_foods", { searchExpression: "egg", pageNumber: 0, maxResults: 0 }, "foods.search", false,
+    { search_expression: "egg", page_number: "0", max_results: "0" }],
+  ["get_food", { foodId: "1" }, "food.get", false, { food_id: "1" }],
+  ["search_recipes", { searchExpression: "egg" }, "recipes.search", false,
+    { search_expression: "egg", page_number: "0", max_results: "20" }],
+  ["get_recipe", { recipeId: "1" }, "recipe.get", false, { recipe_id: "1" }],
+  ["get_user_profile", {}, "profile.get", true, {}],
+  ["get_user_food_entries", { date: "1970-01-01" }, "food_entries.get", true, { date: "0" }],
+  ["add_food_entry", { foodId: "1", servingId: "2", foodEntryName: "egg", quantity: 0, mealType: "other", date: "1970-01-01" }, "food_entry.create", true,
+    { food_id: "1", serving_id: "2", food_entry_name: "egg", number_of_units: "0", meal: "other", date: "0" }],
+  ["delete_food_entry", { foodEntryId: "1" }, "food_entry.delete", true, { food_entry_id: "1" }],
+  ["update_food_entry", { foodEntryId: "1", quantity: 0 }, "food_entry.edit", true, { food_entry_id: "1", number_of_units: "0" }],
+  ["get_weight_month", { date: "1970-01-01" }, "weights.get_month", true, { date: "0" }],
+] as const) {
+  test(`legacy ${name} retains its method, inputs and authentication`, async () => {
+    const { client, calls } = setup();
+    await handleDataTool(client, name, args);
+    assert.deepEqual(calls, [{
+      method: ["add_food_entry", "delete_food_entry", "update_food_entry"].includes(name) ? "POST" : "GET",
+      url: FATSECRET_API_URL,
+      params: { method, ...expected, format: "json" }, userAuth,
+    }]);
+  });
+}
+
+test("legacy add_food_entry still defaults its name from food.get", async () => {
+  const { client, calls } = setup();
+  const stub = client.makeApiRequest.bind(client);
+  client.makeApiRequest = async (...args) => {
+    await stub(...args);
+    return args[2]?.method === "food.get" ? { food: { food_name: "Apple" } } : { success: true };
+  };
+  await handleDataTool(client, "add_food_entry", { foodId: "1", servingId: "2", quantity: 1, mealType: "lunch", date: "1970-01-01" });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].params.method, "food.get");
+  assert.equal(calls[0].userAuth, false);
+  assert.equal(calls[1].params.food_entry_name, "Apple");
+  assert.equal(calls[1].userAuth, true);
+});

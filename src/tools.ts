@@ -1,5 +1,6 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { FATSECRET_API_URL, FatSecretClient } from "./fatsecret.js";
+import { catalogTools, prepareCatalogCall, toolCatalog } from "./tool-catalog.js";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -200,6 +201,7 @@ export const dataTools = [
       },
     },
   },
+  ...catalogTools,
 ];
 
 /** Converts a YYYY-MM-DD date (default: today) to days since 1970-01-01, as FatSecret expects. */
@@ -225,6 +227,8 @@ async function apiCall(
     method: "GET" | "POST";
     params: Record<string, string>;
     userAuth: boolean;
+    url?: string;
+    jsonBody?: Record<string, unknown>;
     format?: (response: unknown) => string;
   },
 ) {
@@ -244,12 +248,14 @@ async function apiCall(
   }
 
   try {
-    const response = await client.makeApiRequest(
-      opts.method,
-      FATSECRET_API_URL,
-      { ...opts.params, format: "json" },
-      opts.userAuth,
-    );
+    const response = opts.jsonBody
+      ? await client.makeJsonApiRequest(opts.url!, opts.jsonBody)
+      : await client.makeApiRequest(
+        opts.method,
+        opts.url ?? FATSECRET_API_URL,
+        { ...opts.params, format: "json" },
+        opts.userAuth,
+      );
     return textResult(
       opts.format ? opts.format(response) : JSON.stringify(response, null, 2),
     );
@@ -291,6 +297,18 @@ export async function handleDataTool(
   name: string,
   args: any = {},
 ) {
+  const operation = toolCatalog.find((entry) => entry.name === name);
+  if (operation) {
+    const { params, body } = prepareCatalogCall(operation, args);
+    return apiCall(client, {
+      action: operation.name.replace(/_/g, " "),
+      method: operation.httpMethod,
+      userAuth: operation.userAuth,
+      url: operation.url,
+      params,
+      ...(operation.json && { jsonBody: body }),
+    });
+  }
   switch (name) {
     case "search_foods":
       return apiCall(client, {
