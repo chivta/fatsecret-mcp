@@ -127,6 +127,58 @@ export const dataTools = [
     },
   },
   {
+    name: "delete_food_entry",
+    description: "Delete a food entry from the user's diary",
+    inputSchema: {
+      type: "object",
+      properties: {
+        foodEntryId: {
+          type: "string",
+          description: "The food entry ID retrieved by get_user_food_entries",
+        },
+      },
+      required: ["foodEntryId"],
+    },
+  },
+  {
+    name: "update_food_entry",
+    description:
+      "Update a food entry in the user's diary (at least one update field required; food and date cannot be changed)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        foodEntryId: {
+          type: "string",
+          description: "The food entry ID retrieved by get_user_food_entries",
+        },
+        foodEntryName: {
+          type: "string",
+          description: "Name shown in the diary",
+        },
+        servingId: {
+          type: "string",
+          description: "The serving ID for the food",
+        },
+        quantity: {
+          type: "number",
+          description: "Quantity of the serving",
+        },
+        mealType: {
+          type: "string",
+          description: "Meal type (breakfast, lunch, dinner, other)",
+          enum: ["breakfast", "lunch", "dinner", "other"],
+        },
+      },
+      required: ["foodEntryId"],
+      anyOf: [
+        { required: ["foodEntryName"] },
+        { required: ["servingId"] },
+        { required: ["quantity"] },
+        { required: ["mealType"] },
+      ],
+    },
+  },
+  {
     name: "check_auth_status",
     description: "Check if the user is authenticated with FatSecret",
     inputSchema: {
@@ -318,6 +370,54 @@ export async function handleDataTool(
         },
         format: (response) =>
           `Food entry added successfully!\n\n${
+            JSON.stringify(response, null, 2)
+          }`,
+      });
+    }
+    case "delete_food_entry":
+      return apiCall(client, {
+        action: "delete food entry",
+        method: "POST",
+        userAuth: true,
+        params: {
+          method: "food_entry.delete",
+          food_entry_id: args.foodEntryId,
+        },
+        format: (response) =>
+          `Food entry deleted successfully!\n\n${
+            JSON.stringify(response, null, 2)
+          }`,
+      });
+    case "update_food_entry": {
+      const params: Record<string, string> = {
+        method: "food_entry.edit",
+        food_entry_id: args.foodEntryId,
+      };
+      if (args.foodEntryName !== undefined) {
+        params.food_entry_name = args.foodEntryName;
+      }
+      if (args.servingId !== undefined) {
+        params.serving_id = args.servingId;
+      }
+      if (args.quantity !== undefined) {
+        params.number_of_units = String(args.quantity);
+      }
+      if (args.mealType !== undefined) {
+        params.meal = args.mealType;
+      }
+      if (Object.keys(params).length === 2) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "At least one update field is required: foodEntryName, servingId, quantity, or mealType.",
+        );
+      }
+      return apiCall(client, {
+        action: "update food entry",
+        method: "POST",
+        userAuth: true,
+        params,
+        format: (response) =>
+          `Food entry updated successfully!\n\n${
             JSON.stringify(response, null, 2)
           }`,
       });

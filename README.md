@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides access to the FatSecret nutr
 - **Complete OAuth 1.0a Implementation**: Full 3-legged OAuth flow for user authentication
 - **Food Database Access**: Search and retrieve detailed nutrition information
 - **Recipe Database**: Search for recipes and get detailed cooking instructions
-- **User Data Management**: Access user food diaries and add food entries
+- **User Data Management**: Access user food diaries and add, update, or delete food entries
 - **Secure Credential Storage**: Encrypted storage of API credentials and tokens
 
 ## Getting Started
@@ -164,6 +164,8 @@ Once authenticated, you can use all available tools:
 - `get_user_profile`: Get the authenticated user's profile
 - `get_user_food_entries`: Get food diary entries for a specific date
 - `add_food_entry`: Add a food entry to the user's diary
+- `delete_food_entry`: Delete a food entry from the user's diary
+- `update_food_entry`: Update a food entry in the user's diary
 
 #### Utility
 
@@ -267,8 +269,28 @@ Add a food entry to the user's diary.
 - `foodId` (string, required): FatSecret food ID
 - `servingId` (string, required): Serving ID for the food
 - `quantity` (number, required): Quantity of the serving
-- `mealType` (string, required): Meal type (breakfast, lunch, dinner, snack)
+- `mealType` (string, required): Meal type (breakfast, lunch, dinner, other)
 - `date` (string, optional): Date in YYYY-MM-DD format (default: today)
+
+#### `delete_food_entry`
+
+Delete a food entry from the user's diary.
+
+**Parameters:**
+
+- `foodEntryId` (string, required): Food entry ID retrieved by `get_user_food_entries`
+
+#### `update_food_entry`
+
+Update a food entry in the user's diary. At least one optional update field must be provided. Omitted fields remain unchanged; the entry's food ID and date cannot be updated.
+
+**Parameters:**
+
+- `foodEntryId` (string, required): Food entry ID retrieved by `get_user_food_entries`
+- `foodEntryName` (string, optional): Name shown in the diary
+- `servingId` (string, optional): Serving ID for the food
+- `quantity` (number, optional): Quantity of the serving
+- `mealType` (string, optional): Meal type (breakfast, lunch, dinner, other)
 
 ## Example Workflow
 
