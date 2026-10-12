@@ -35,10 +35,27 @@ interface Operation {
   httpMethod: "GET" | "POST";
   userAuth: boolean;
   destructive?: boolean;
+  /** Not included in the Basic plan: FatSecret answers error 10 "Unknown method". */
+  premier?: boolean;
+  /** Reshapes the parsed response before it is serialised. */
+  transform?: (response: any) => unknown;
+  /** Uses today's UTC date when neither `date` nor `food_entry_id` is given. */
+  defaultsToToday?: boolean;
   fields: Field[];
   atLeastOne?: string[];
   conditions?: ConditionalRequirement[];
 }
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const PREMIER_PREFIX = "[FatSecret Premier plan only; a Basic key answers error 10] ";
+/** FatSecret error code for a method the API key's plan does not include. */
+const UNKNOWN_METHOD_ERROR_CODE = "10";
+export const PREMIER_ERROR_SUFFIX = ". This method is not included in the API key's FatSecret plan (Premier required).";
+const DEFAULT_DAY = "Default: FatSecret's current day; pass it explicitly to avoid timezone surprises.";
+export const NUMBER_OF_UNITS = "Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the \"100 g\" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5.";
+const ENTRY_ROUNDING = 2;
+const KCAL_PER_UNIT_ROUNDING = 4;
+export const REFERENCE_SERVING_ID = "0";
 
 const meals = ["breakfast", "lunch", "dinner", "other"];
 const field = (apiName: string, schema: ValueSchema, required = false): Field => ({
@@ -55,6 +72,9 @@ const date = (description: string): ValueSchema => string(
   `YYYY-MM-DD calendar date, converted to days since 1970-01-01. ${description}`,
   { format: "date", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
 );
+const PREMIER_PARAM = "Premier plan feature.";
+const REGION = string(`Two-letter country code that filters results by region ("FR" returns results from France). Default: "US". Localization is a ${PREMIER_PARAM}`);
+const LANGUAGE = string(`Two-letter language code for the results ("fr" returns French); ignored unless region is given. Localization is a ${PREMIER_PARAM}`);
 const mealList: ValueSchema = {
   type: "array", description: "Meals the saved meal is suitable for; sent as a comma-separated list.",
   items: string("Meal type", { enum: meals }),
@@ -81,6 +101,68 @@ const returnedFood: ValueSchema = {
   },
 };
 
+export const toArray = (value: any): any[] => value == null ? [] : Array.isArray(value) ? value : [value];
+export const roundTo = (value: number, digits: number) => Math.round(value * 10 ** digits) / 10 ** digits;
+
+/** food.servings.serving is always an array; adds kcal_per_unit and loggable: false for the derived serving "0". */
+function foodTransform(response: any) {
+  const food = response?.food;
+  if (!food) return response;
+  const serving = toArray(food.servings?.serving).map((entry: any) => {
+    const calories = Number(entry.calories);
+    const units = Number(entry.number_of_units);
+    return {
+      ...entry,
+      ...(calories && units && { kcal_per_unit: roundTo(calories / units, KCAL_PER_UNIT_ROUNDING) }),
+      ...(entry.serving_id === REFERENCE_SERVING_ID && { loggable: false }),
+    };
+  });
+  return { ...response, food: { ...food, servings: { ...food.servings, serving } } };
+}
+
+/** foods.food is always an array. */
+function foodsSearchTransform(response: any) {
+  if (!response || !("foods" in response)) return response;
+  return { ...response, foods: { ...response.foods, food: toArray(response.foods?.food) } };
+}
+
+const MACROS = ["calories", "protein", "fat", "carbohydrate"] as const;
+
+/** food_entries.food_entry is always an array; adds totals overall and by_meal. */
+function foodEntriesTransform(response: any) {
+  if (!response || !("food_entries" in response)) return response;
+  const entries = toArray(response.food_entries?.food_entry);
+  const sum = (items: any[]) => Object.fromEntries(
+    MACROS.map((key) => [key, roundTo(items.reduce((total, item) => total + (Number(item[key]) || 0), 0), ENTRY_ROUNDING)]),
+  );
+  const byMeal: Record<string, any[]> = {};
+  for (const entry of entries) (byMeal[String(entry.meal).toLowerCase()] ??= []).push(entry);
+  return {
+    ...response,
+    food_entries: { ...response.food_entries, food_entry: entries },
+    totals: { ...sum(entries), by_meal: Object.fromEntries(Object.entries(byMeal).map(([meal, items]) => [meal, sum(items)])) },
+  };
+}
+
+/** Adds a YYYY-MM-DD sibling to every *date_int day number (date_int -> date, from_date_int -> from_date). */
+export function addIsoDates(value: any): any {
+  if (Array.isArray(value)) return value.map(addIsoDates);
+  if (!value || typeof value !== "object") return value;
+  const result: Record<string, any> = {};
+  for (const [key, item] of Object.entries(value)) {
+    result[key] = addIsoDates(item);
+    if (key.endsWith("date_int") && /^-?\d+$/.test(String(item))) {
+      const isoKey = key.slice(0, -"_int".length);
+      if (!(isoKey in value)) result[isoKey] = new Date(Number(item) * MS_PER_DAY).toISOString().slice(0, 10);
+    }
+  }
+  return result;
+}
+
+/** True when a FatSecret error message carries error code 10 (method not in the plan). */
+export const isUnknownMethodError = (message: string) =>
+  message.includes(`FatSecret API error: ${UNKNOWN_METHOD_ERROR_CODE} - `);
+
 /** Latest navigation operations, including versioned alternatives to legacy tools.
  * Each docPath is relative to https://platform.fatsecret.com/docs/.
  * Method strings are taken from the parameter tables, not inferred from paths.
@@ -92,7 +174,7 @@ export const toolCatalog: Operation[] = [
     method: "exercise_entries.commit_day",
     httpMethod: "POST", userAuth: true, destructive: false,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
@@ -102,7 +184,7 @@ export const toolCatalog: Operation[] = [
     httpMethod: "POST", userAuth: true, destructive: true,
     fields: [
       field("days", integer("The days of the week specified as bits with Sunday being the 1st bit and Saturday being the last and then converted to an Int. For example Tuesday and Thursday would be represented as 00010100 in bits or 20 in Int where Tuesday is the 3rd bit from the right and Thursday being the 5th. Must be between 0 and 128", { minimum: 0, maximum: 128 }), true),
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
@@ -114,7 +196,7 @@ export const toolCatalog: Operation[] = [
       field("shift_to_id", string("ID of the exercise type to shift to (canonical decimal string)", { pattern: "^(0|[1-9]\\d*)$" }), true),
       field("shift_from_id", string("ID of the exercise type to shift from (canonical decimal string)", { pattern: "^(0|[1-9]\\d*)$" }), true),
       field("minutes", integer("Duration in minutes"), true),
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
       field("shift_to_name", string("Only required if shift_to_id is 0 (exercise type \"Other\"). This is the name of the new custom exercise type to shift to")),
       field("shift_from_name", string("Only required if shift_from_id is 0 (exercise type \"Other\"). This is the name of the custom exercise type to shift from")),
       field("kcal", integer("Only required if shift_to_id is 0 (exercise type \"Other\"). This is the total number of kcals burned for this exercise")),
@@ -128,7 +210,7 @@ export const toolCatalog: Operation[] = [
     docPath: "v1/feedback", name: "submit_food_feedback",
     description: "This API method enables developers to submit user feedback regarding potentially incorrect or missing food and/or barcode data. It supports a variety of issue types, including potential food or brand naming errors, incorrect nutrition facts, missing serving sizes, and unrecognized barcodes.  Requires Premier feature access; uses an OAuth1-signed JSON path endpoint.",
     url: "https://platform.fatsecret.com/rest/feedback/v1", json: true,
-    httpMethod: "POST", userAuth: false, destructive: false,
+    httpMethod: "POST", userAuth: false, premier: true, destructive: false,
     fields: [
       field("barcode", string("A barcode where a food is associated incorrectly. Required when issue_type_id is 1", { pattern: "^\\d{13}$" })),
       field("issue_type_id", integer("The type ID for the request. Valid options are 1 (Wrong Name/Brand), 2 (Wrong Nutrition Info), 3 (Missing Serving Size), 4 (Barcode not found), 99 (Other)", { enum: [1, 2, 3, 4, 99] }), true),
@@ -136,8 +218,8 @@ export const toolCatalog: Operation[] = [
       field("notes", string("Custom notes regarding the issue")),
       field("external_id", string("Custom identifier for external use. E.g an external unique user identifier"), true),
       field("image_file_extension", string("The image file extension in which the signed uploads will be generated using. Accepts jpg, jpeg, png and tiff. Defaulted to jpg if not provided", { enum: ["jpg", "jpeg", "png", "tiff"] })),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
       field("returned_food", returnedFood),
     ],
     conditions: [
@@ -154,7 +236,7 @@ export const toolCatalog: Operation[] = [
     fields: [
       field("food_id", string("Unique food identifier", { pattern: "^\\d+$" }), true),
       field("serving_id", string("Unique serving identifier", { pattern: "^\\d+$" })),
-      field("number_of_units", number("Number of units in this standard serving size. For instance, if the serving description is \"2 tablespoons\" the number of units is \"2\", while if the serving size is \"1 cup\" the number of units is \"1\". Please note that this is only applicable for when food_type is \"Generic\" whereas for \"Brand\" the number of units will always be \"1\"")),
+      field("number_of_units", number(NUMBER_OF_UNITS)),
     ],
   },
   {
@@ -165,7 +247,7 @@ export const toolCatalog: Operation[] = [
     fields: [
       field("food_id", string("Unique food identifier", { pattern: "^\\d+$" }), true),
       field("serving_id", string("Unique serving identifier", { pattern: "^\\d+$" })),
-      field("number_of_units", number("Number of units in this standard serving size. For instance, if the serving description is \"2 tablespoons\" the number of units is \"2\", while if the serving size is \"1 cup\" the number of units is \"1\". Please note that this is only applicable for when food_type is \"Generic\" whereas for \"Brand\" the number of units will always be \"1\"")),
+      field("number_of_units", number(NUMBER_OF_UNITS)),
     ],
   },
   {
@@ -187,20 +269,20 @@ export const toolCatalog: Operation[] = [
     fields: [
       field("saved_meal_id", string("Unique saved meal identifier", { pattern: "^\\d+$" }), true),
       field("meal", string("Type of meal eaten. Valid meal types are \"breakfast\", \"lunch\", \"dinner\" and \"other\"", { enum: meals }), true),
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
     docPath: "v1/natural.language.processing", name: "process_natural_language",
     description: "Parses a description of eaten foods into FatSecret food matches and servings. Requires Premier feature access; uses an OAuth1-signed JSON path endpoint.",
     url: "https://platform.fatsecret.com/rest/natural-language-processing/v1", json: true,
-    httpMethod: "POST", userAuth: false, destructive: false,
+    httpMethod: "POST", userAuth: false, premier: true, destructive: false,
     fields: [
       field("user_input", string("A description of what a user has eaten. May contain multiple items. e.g. \"A toast with ham and cheese, an apple, a banana and a cappuccino\". This field is limited to 1000 characters", { maxLength: 1000 }), true),
       field("include_food_data", boolean("Include full food data in the response (see our food.get API)")),
       field("eaten_foods", eatenFoods),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
@@ -282,7 +364,7 @@ export const toolCatalog: Operation[] = [
       field("food_id", string("Unique food identifier", { pattern: "^\\d+$" }), true),
       field("saved_meal_item_name", string("New name of the saved meal item"), true),
       field("serving_id", string("Unique serving identifier", { pattern: "^\\d+$" }), true),
-      field("number_of_units", number("Number of units in this standard serving size. For instance, if the serving description is \"2 tablespoons\" the number of units is \"2\", while if the serving size is \"1 cup\" the number of units is \"1\". Please note that this is only applicable for when food_type is \"Generic\" whereas for \"Brand\" the number of units will always be \"1\""), true),
+      field("number_of_units", number(NUMBER_OF_UNITS), true),
     ],
   },
   {
@@ -302,7 +384,7 @@ export const toolCatalog: Operation[] = [
     fields: [
       field("saved_meal_item_id", string("Unique saved meal item identifier", { pattern: "^\\d+$" }), true),
       field("saved_meal_item_name", string("New name of the saved meal item")),
-      field("number_of_units", number("Number of units in this standard serving size. For instance, if the serving description is \"2 tablespoons\" the number of units is \"2\", while if the serving size is \"1 cup\" the number of units is \"1\". Please note that this is only applicable for when food_type is \"Generic\" whereas for \"Brand\" the number of units will always be \"1\"")),
+      field("number_of_units", number(NUMBER_OF_UNITS)),
     ],
     atLeastOne: ["savedMealItemName", "numberOfUnits"],
   },
@@ -313,7 +395,7 @@ export const toolCatalog: Operation[] = [
     httpMethod: "POST", userAuth: true, destructive: true,
     fields: [
       field("current_weight_kg", number("Current weight of the user in kilograms"), true),
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
       field("weight_type", string("Weight measurement type for this user profile. Valid types are \"kg\" and \"lb\" (default value is \"kg\")", { enum: ["kg", "lb"] })),
       field("height_type", string("Height measurement type for this user profile. Valid types are \"cm\" and \"inch\" (default value is \"cm\")", { enum: ["cm", "inch"] })),
       field("goal_weight_kg", number("User's goal weight in kilograms")),
@@ -327,7 +409,7 @@ export const toolCatalog: Operation[] = [
     method: "exercise_entries.get.v2",
     httpMethod: "GET", userAuth: true, destructive: false,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
@@ -336,7 +418,7 @@ export const toolCatalog: Operation[] = [
     method: "exercise_entries.get_month.v2",
     httpMethod: "GET", userAuth: true, destructive: false,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
@@ -345,15 +427,15 @@ export const toolCatalog: Operation[] = [
     method: "exercises.get.v2",
     httpMethod: "GET", userAuth: false, destructive: false,
     fields: [
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/food.create", name: "create_food",
     description: "Creates a food for the user according to the parameters specified. The result of the call is the new unique identifier of the newly created food.",
     method: "food.create.v2",
-    httpMethod: "POST", userAuth: true, destructive: false,
+    httpMethod: "POST", userAuth: true, premier: true, destructive: false,
     fields: [
       field("brand_type", string("Either \"manufacturer\", \"restaurant\" or \"supermarket\" (default value is \"manufacturer\")", { enum: ["manufacturer", "restaurant", "supermarket"] }), true),
       field("brand_name", string("Brand name, only when food_type is \"Brand\". E.G.: \"Quaker\""), true),
@@ -381,45 +463,45 @@ export const toolCatalog: Operation[] = [
       field("vitamin_c", number("Vitamin C content in milligrams (where available)")),
       field("calcium", number("Calcium content in milligrams (where available)")),
       field("iron", number("Iron content in milligrams (where available)")),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/food.find_id_for_barcode", name: "find_food_by_barcode",
     description: "Returns detailed nutritional information for the specified food matching the barcode specified. Barcodes must be specified as GTIN-13 numbers - a 13-digit number filled in with zeros for the spaces to the left. UPC-A, EAN-13 and EAN-8 barcodes may be specified. UPC-E barcodes should be converted to their UPC-A equivalent (and then specified as GTIN-13 numbers).",
     method: "food.find_id_for_barcode.v2",
-    httpMethod: "GET", userAuth: false, destructive: false,
+    httpMethod: "GET", userAuth: false, premier: true, destructive: false,
     fields: [
       field("barcode", string("13-digit GTIN-13 formatted sequence of digits representing the barcode to search against", { pattern: "^\\d{13}$" }), true),
-      field("include_sub_categories", boolean("Response will include the names of all sub categories associated with the food")),
+      field("include_sub_categories", boolean(`Response will include the names of all sub categories associated with the food. ${PREMIER_PARAM}`)),
       field("include_food_images", boolean("Response will include food image in the response. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
       field("include_food_attributes", boolean("Response will include food dietary preferences and allergens if available. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
-      field("flag_default_serving", boolean("Either \"true\" or \"false\" - the response will flag one of the servings as the default serving (the suggested or most commonly chosen option)")),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("flag_default_serving", boolean(`The response flags one serving as the default (the suggested or most commonly chosen option). ${PREMIER_PARAM}`)),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/food_brands.get", name: "get_food_brands",
     description: "This is a utility method, returning the list of food brands.",
     method: "food_brands.get.v2",
-    httpMethod: "GET", userAuth: false, destructive: false,
+    httpMethod: "GET", userAuth: false, premier: true, destructive: false,
     fields: [
       field("starts_with", string("Food brands that begin with the first letter is returned. The \"*\" will return all food brands beginning with a numeric character. If this is not specified then the most popular food brands at the time is returned"), true),
       field("brand_type", string("Either \"manufacturer\", \"restaurant\" or \"supermarket\" (default value is \"manufacturer\")", { enum: ["manufacturer", "restaurant", "supermarket"] })),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/food_categories.get", name: "get_food_categories",
     description: "This is a utility method, returning the full list of all food categories and their associated unique identifiers.",
     method: "food_categories.get.v2",
-    httpMethod: "GET", userAuth: false, destructive: false,
+    httpMethod: "GET", userAuth: false, premier: true, destructive: false,
     fields: [
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
@@ -428,29 +510,29 @@ export const toolCatalog: Operation[] = [
     method: "food_entries.get_month.v2",
     httpMethod: "GET", userAuth: true, destructive: false,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)"), true),
+      field("date", date(DEFAULT_DAY)),
     ],
   },
   {
     docPath: "v2/food_sub_categories.get", name: "get_food_sub_categories",
     description: "This is a utility method, returning the full list of all food sub categories for a food category.",
     method: "food_sub_categories.get.v2",
-    httpMethod: "GET", userAuth: false, destructive: false,
+    httpMethod: "GET", userAuth: false, premier: true, destructive: false,
     fields: [
       field("food_category_id", string("Unique identifier of the food category entry", { pattern: "^\\d+$" }), true),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/foods.autocomplete", name: "autocomplete_foods",
     description: "Returns food elements best matching the search expression specified, ordered by their relevancy to the search expression.",
     method: "foods.autocomplete.v2",
-    httpMethod: "GET", userAuth: false, destructive: false,
+    httpMethod: "GET", userAuth: false, premier: true, destructive: false,
     fields: [
       field("expression", string("Suggestions for the given expression is returned. E.G.: \"chic\" will return up to four of the best suggestions that contains \"chic\""), true),
       field("max_results", integer("Maximum number of results to return (default value is 4). This number cannot be greater than 10", { minimum: 0, maximum: 10 })),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
+      field("region", REGION),
     ],
   },
   {
@@ -483,13 +565,13 @@ export const toolCatalog: Operation[] = [
     docPath: "v2/image.recognition", name: "recognize_food_image",
     description: "Identifies foods and portion sizes in a base64 jpg/png/webp image, returning local database matches. Requires Premier feature access; uses an OAuth1-signed JSON path endpoint.",
     url: "https://platform.fatsecret.com/rest/image-recognition/v2", json: true,
-    httpMethod: "POST", userAuth: false, destructive: false,
+    httpMethod: "POST", userAuth: false, premier: true, destructive: false,
     fields: [
       field("image_b64", string("A Base64 image of one or more foods. This field is limited to 999,982 characters", { maxLength: 999982 }), true),
       field("include_food_data", boolean("Include full food data in the response (see our food.get API)")),
       field("eaten_foods", eatenFoods),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
@@ -498,14 +580,14 @@ export const toolCatalog: Operation[] = [
     method: "recipe_types.get.v2",
     httpMethod: "GET", userAuth: false, destructive: false,
     fields: [
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v2/recipes.get_favorites", name: "get_favorite_recipes",
     description: "Returns the favorite recipes for the specified user.",
-    method: "recipe.get_favorites.v2",
+    method: "recipes.get_favorites.v2",
     httpMethod: "GET", userAuth: true, destructive: false,
     fields: [
     ],
@@ -529,50 +611,50 @@ export const toolCatalog: Operation[] = [
     ],
   },
   {
-    docPath: "v5/food.get", name: "get_food_v5",
-    description: "Get detailed v5 food data, including standardized servings, with optional localization/images/attributes. Derived serving ID 0 cannot be used for food_entry.create.",
+    docPath: "v5/food.get", name: "get_food",
+    description: "Get a food with its servings. Every serving has number_of_units and measurement_description (the unit one number_of_units is counted in: g, ml, bar, cup, serving...), the nutrition (calories, protein, fat, carbohydrate) for that amount, and kcal_per_unit (calories / number_of_units, the energy of one unit). A serving with loggable: false (serving_id \"0\") is a derived per-100 reference and cannot be logged; use another serving. To log, pass a serving_id and number_of_units to add_food_entry, or just amount + unit.",
     method: "food.get.v5",
-    httpMethod: "GET", userAuth: false,
+    httpMethod: "GET", userAuth: false, transform: foodTransform,
     fields: [
       field("food_id", string("Unique food identifier", { pattern: "^\\d+$" }), true),
-      field("include_sub_categories", boolean("Response will include the names of all sub categories associated with the food")),
+      field("include_sub_categories", boolean(`Response will include the names of all sub categories associated with the food. ${PREMIER_PARAM}`)),
       field("include_food_images", boolean("Response will include food image in the response. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
       field("include_food_attributes", boolean("Response will include food dietary preferences and allergens if available. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
-      field("flag_default_serving", boolean("Either \"true\" or \"false\" - the response will flag one of the servings as the default serving (the suggested or most commonly chosen option)")),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("flag_default_serving", boolean(`The response flags one serving as the default (the suggested or most commonly chosen option). ${PREMIER_PARAM}`)),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
     docPath: "v5/foods.search", name: "search_foods_v5",
     description: "Search foods with v5 detailed nutrition, brand/generic filtering, and optional localization/images/attributes. Requires Premier access.",
     method: "foods.search.v5",
-    httpMethod: "GET", userAuth: false,
+    httpMethod: "GET", userAuth: false, premier: true,
     fields: [
       field("search_expression", string("Search expression to match on food names")),
       field("page_number", integer("Zero-based offset into the results for the query", { minimum: 0 })),
       field("max_results", integer("Maximum number of results to return (default value is 20). This number cannot be greater than 50", { minimum: 0, maximum: 50 })),
-      field("include_sub_categories", boolean("Response will include the names of all sub categories associated with the food")),
+      field("include_sub_categories", boolean(`Response will include the names of all sub categories associated with the food. ${PREMIER_PARAM}`)),
       field("include_food_images", boolean("Response will include food image in the response. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
       field("include_food_attributes", boolean("Response will include food dietary preferences and allergens if available. (Requires separate premier offering, please contact us in order for this feature to be enabled for your account)")),
-      field("flag_default_serving", boolean("Either \"true\" or \"false\" - the response will flag one of the servings as the default serving (the suggested or most commonly chosen option)")),
+      field("flag_default_serving", boolean(`The response flags one serving as the default (the suggested or most commonly chosen option). ${PREMIER_PARAM}`)),
       field("food_type", string("Restricts search results to a specific type. Valid values are \"none\", \"generic\" or \"brand\". Defaults to \"none\" i.e no filter", { enum: ["none", "generic", "brand"] })),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
-      field("language", string("(Ignored unless region is also specified) Results will be in the specified language. E.G.: \"fr\" returns results in French")),
+      field("region", REGION),
+      field("language", LANGUAGE),
     ],
   },
   {
-    docPath: "v2/recipe.get", name: "get_recipe_v2",
+    docPath: "v2/recipe.get", name: "get_recipe",
     description: "Get recipe v2 details including grams per portion, with optional Premier region localization.",
     method: "recipe.get.v2",
     httpMethod: "GET", userAuth: false,
     fields: [
       field("recipe_id", string("Unique recipe identifier", { pattern: "^\\d+$" }), true),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
+      field("region", REGION),
     ],
   },
   {
-    docPath: "v3/recipes.search", name: "search_recipes_v3",
+    docPath: "v3/recipes.search", name: "search_recipes",
     description: "Search recipes with v3 recipe-type, image, nutrition/time filters, sorting, and optional Premier region localization.",
     method: "recipes.search.v3",
     httpMethod: "GET", userAuth: false,
@@ -594,29 +676,48 @@ export const toolCatalog: Operation[] = [
       field("page_number", integer("Zero-based offset into the results for the query", { minimum: 0 })),
       field("max_results", integer("Maximum number of results to return (default value is 20). This number cannot be greater than 50", { minimum: 0, maximum: 50 })),
       field("sort_by", string("This option will order results. Valid options include: newest, oldest, caloriesPerServingAscending, caloriesPerServingDescending. When not explicitly set, the ordering will be returned by newest", { enum: ["newest", "oldest", "caloriesPerServingAscending", "caloriesPerServingDescending"] })),
-      field("region", string("Results will be filtered by region. E.G.: \"FR\" returns results from France. If not specified this will default to \"US\" (United States). Click here for full documentation on localization.")),
+      field("region", REGION),
     ],
   },
   {
-    docPath: "v2/food_entries.get", name: "get_user_food_entries_v2",
-    description: "Get v2 diary entries by calendar date or a single foodEntryId. Supply at least one lookup field; the description documents alternate lookup despite both rows being marked Required.",
+    docPath: "v2/food_entries.get", name: "get_user_food_entries",
+    description: "Get diary entries for one day (date) or a single entry (foodEntryId). With neither, returns today's entries by UTC date. food_entries.food_entry is always an array ([] for an empty day) and totals holds calories, protein, fat and carbohydrate for the whole result and per meal (by_meal).",
     method: "food_entries.get.v2",
-    httpMethod: "GET", userAuth: true,
+    httpMethod: "GET", userAuth: true, transform: foodEntriesTransform, defaultsToToday: true,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date("Default: today in UTC; pass it explicitly to avoid timezone surprises.")),
       field("food_entry_id", string("Unique identifier of the food diary entry", { pattern: "^\\d+$" })),
     ],
-    // Follow alternate date-or-ID lookup in the description, not the contradictory table.
-    atLeastOne: ["date", "foodEntryId"],
   },
   {
-    docPath: "v2/weights.get_month", name: "get_weight_month_v2",
+    docPath: "v2/weights.get_month", name: "get_weight_month",
     description: "Get monthly weight entries using v2 consistent array formatting. Omitted date defaults to the current day on FatSecret.",
     method: "weights.get_month.v2",
     httpMethod: "GET", userAuth: true,
     fields: [
-      field("date", date("Number of days since January 1, 1970 (default value is the current day)")),
+      field("date", date(DEFAULT_DAY)),
     ],
+  },
+  {
+    docPath: "v1/foods.search", name: "search_foods",
+    description: "Search foods by name. This is the only food search available on the Basic plan and it matches English names only. foods.food is always an array ([] for no results).",
+    method: "foods.search",
+    httpMethod: "GET", userAuth: false, destructive: false, transform: foodsSearchTransform,
+    fields: [
+      field("search_expression", string("Search term for foods (e.g. \"chicken breast\", \"apple\")"), true),
+      field("page_number", integer("Zero-based offset into the results for the query", { minimum: 0 })),
+      field("max_results", integer("Maximum number of results to return (default value is 20). This number cannot be greater than 50", { minimum: 0, maximum: 50 })),
+      field("generic_description", string(`Basis of the nutrition summary in food_description: "weight" (per 100 g, the default) or "portion" (per default portion). ${PREMIER_PARAM}`, { enum: ["weight", "portion"] })),
+      field("region", REGION),
+      field("language", LANGUAGE),
+    ],
+  },
+  {
+    docPath: "v1/profile.get", name: "get_user_profile",
+    description: "Get the authenticated user's profile information.",
+    method: "profile.get",
+    httpMethod: "GET", userAuth: true, destructive: false,
+    fields: [],
   },
 ];
 
@@ -629,7 +730,7 @@ function requiredSchema(path: string): Record<string, unknown> {
 
 export const catalogTools = toolCatalog.map((operation) => ({
   name: operation.name,
-  description: operation.description,
+  description: (operation.premier ? PREMIER_PREFIX : "") + operation.description,
   inputSchema: {
     type: "object" as const,
     properties: Object.fromEntries(operation.fields.map((f) => [f.name, f.schema])),
@@ -732,8 +833,11 @@ export function prepareCatalogCall(operation: Operation, args: unknown) {
     if (value === undefined) continue;
     if (operation.json) body[f.apiName] = toSnakeCase(value as JsonValue);
     else params[f.apiName] = f.schema.format === "date"
-      ? String(Math.floor(Date.parse(`${value}T00:00:00Z`) / 86400000))
+      ? String(Math.floor(Date.parse(`${value}T00:00:00Z`) / MS_PER_DAY))
       : Array.isArray(value) ? value.join(",") : String(value);
+  }
+  if (operation.defaultsToToday && params.date === undefined && params.food_entry_id === undefined) {
+    params.date = String(Math.floor(Date.now() / MS_PER_DAY));
   }
   if (operation.json) {
     const serialized = JSON.stringify(body);

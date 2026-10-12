@@ -66,7 +66,7 @@ const fixtures: Fixture[] = [
   {"docPath": "v2/food.find_id_for_barcode", "name": "find_food_by_barcode", "method": "food.find_id_for_barcode.v2", "httpMethod": "GET", "userAuth": false, "required": ["barcode"], "args": {"barcode": "0041570054161", "includeSubCategories": false, "includeFoodImages": false, "includeFoodAttributes": false, "flagDefaultServing": false, "region": "test", "language": "test"}, "expected": {"barcode": "0041570054161", "include_sub_categories": "false", "include_food_images": "false", "include_food_attributes": "false", "flag_default_serving": "false", "region": "test", "language": "test"}},
   {"docPath": "v2/food_brands.get", "name": "get_food_brands", "method": "food_brands.get.v2", "httpMethod": "GET", "userAuth": false, "required": ["startsWith"], "args": {"startsWith": "test", "brandType": "manufacturer", "region": "test", "language": "test"}, "expected": {"starts_with": "test", "brand_type": "manufacturer", "region": "test", "language": "test"}},
   {"docPath": "v2/food_categories.get", "name": "get_food_categories", "method": "food_categories.get.v2", "httpMethod": "GET", "userAuth": false, "required": [], "args": {"region": "test", "language": "test"}, "expected": {"region": "test", "language": "test"}},
-  {"docPath": "v2/food_entries.get_month", "name": "get_food_entries_month", "method": "food_entries.get_month.v2", "httpMethod": "GET", "userAuth": true, "required": ["date"], "args": {"date": "1970-01-01"}, "expected": {"date": "0"}},
+  {"docPath": "v2/food_entries.get_month", "name": "get_food_entries_month", "method": "food_entries.get_month.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"date": "1970-01-01"}, "expected": {"date": "0"}},
   {"docPath": "v2/food_sub_categories.get", "name": "get_food_sub_categories", "method": "food_sub_categories.get.v2", "httpMethod": "GET", "userAuth": false, "required": ["foodCategoryId"], "args": {"foodCategoryId": "1", "region": "test", "language": "test"}, "expected": {"food_category_id": "1", "region": "test", "language": "test"}},
   {"docPath": "v2/foods.autocomplete", "name": "autocomplete_foods", "method": "foods.autocomplete.v2", "httpMethod": "GET", "userAuth": false, "required": ["expression"], "args": {"expression": "test", "maxResults": 0, "region": "test"}, "expected": {"expression": "test", "max_results": "0", "region": "test"}},
   {"docPath": "v2/foods.get_favorites", "name": "get_favorite_foods", "method": "foods.get_favorites.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {}, "expected": {}},
@@ -74,26 +74,28 @@ const fixtures: Fixture[] = [
   {"docPath": "v2/foods.get_recently_eaten", "name": "get_recently_eaten_foods", "method": "foods.get_recently_eaten.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"meal": "breakfast"}, "expected": {"meal": "breakfast"}},
   {"docPath": "v2/image.recognition", "name": "recognize_food_image", "method": "https://platform.fatsecret.com/rest/image-recognition/v2", "httpMethod": "POST", "userAuth": false, "required": ["imageB64"], "args": {"imageB64": "test", "includeFoodData": false, "eatenFoods": [{"foodId": 3092, "foodName": "egg", "foodBrand": "test", "servingDescription": "whole", "servingSize": "1"}], "region": "test", "language": "test"}, "expected": {"image_b64": "test", "include_food_data": false, "eaten_foods": [{"food_id": 3092, "food_name": "egg", "food_brand": "test", "serving_description": "whole", "serving_size": "1"}], "region": "test", "language": "test"}, "json": true},
   {"docPath": "v2/recipe_types.get", "name": "get_recipe_types", "method": "recipe_types.get.v2", "httpMethod": "GET", "userAuth": false, "required": [], "args": {"region": "test", "language": "test"}, "expected": {"region": "test", "language": "test"}},
-  {"docPath": "v2/recipes.get_favorites", "name": "get_favorite_recipes", "method": "recipe.get_favorites.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {}, "expected": {}},
+  {"docPath": "v2/recipes.get_favorites", "name": "get_favorite_recipes", "method": "recipes.get_favorites.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {}, "expected": {}},
   {"docPath": "v2/saved_meal_items.get", "name": "get_saved_meal_items", "method": "saved_meal_items.get.v2", "httpMethod": "GET", "userAuth": true, "required": ["savedMealId"], "args": {"savedMealId": "1"}, "expected": {"saved_meal_id": "1"}},
   {"docPath": "v2/saved_meals.get", "name": "get_saved_meals", "method": "saved_meals.get.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"meal": "breakfast"}, "expected": {"meal": "breakfast"}},
-  {"docPath": "v5/food.get", "name": "get_food_v5", "method": "food.get.v5", "httpMethod": "GET", "userAuth": false, "required": ["foodId"], "args": {"foodId": "1", "includeSubCategories": false, "includeFoodImages": false, "includeFoodAttributes": false, "flagDefaultServing": false, "region": "test", "language": "test"}, "expected": {"food_id": "1", "include_sub_categories": "false", "include_food_images": "false", "include_food_attributes": "false", "flag_default_serving": "false", "region": "test", "language": "test"}},
+  {"docPath": "v5/food.get", "name": "get_food", "method": "food.get.v5", "httpMethod": "GET", "userAuth": false, "required": ["foodId"], "args": {"foodId": "1", "includeSubCategories": false, "includeFoodImages": false, "includeFoodAttributes": false, "flagDefaultServing": false, "region": "test", "language": "test"}, "expected": {"food_id": "1", "include_sub_categories": "false", "include_food_images": "false", "include_food_attributes": "false", "flag_default_serving": "false", "region": "test", "language": "test"}},
   {"docPath": "v5/foods.search", "name": "search_foods_v5", "method": "foods.search.v5", "httpMethod": "GET", "userAuth": false, "required": [], "args": {"searchExpression": "test", "pageNumber": 0, "maxResults": 0, "includeSubCategories": false, "includeFoodImages": false, "includeFoodAttributes": false, "flagDefaultServing": false, "foodType": "brand", "region": "test", "language": "test"}, "expected": {"search_expression": "test", "page_number": "0", "max_results": "0", "include_sub_categories": "false", "include_food_images": "false", "include_food_attributes": "false", "flag_default_serving": "false", "food_type": "brand", "region": "test", "language": "test"}},
-  {"docPath": "v2/recipe.get", "name": "get_recipe_v2", "method": "recipe.get.v2", "httpMethod": "GET", "userAuth": false, "required": ["recipeId"], "args": {"recipeId": "1", "region": "test"}, "expected": {"recipe_id": "1", "region": "test"}},
-  {"docPath": "v3/recipes.search", "name": "search_recipes_v3", "method": "recipes.search.v3", "httpMethod": "GET", "userAuth": false, "required": [], "args": {"recipeTypes": ["Main Dish", "Soup"], "recipeTypesMatchall": false, "searchExpression": "test", "mustHaveImages": false, "caloriesFrom": 0, "caloriesTo": 0, "carbPercentageFrom": 0, "carbPercentageTo": 0, "proteinPercentageFrom": 0, "proteinPercentageTo": 0, "fatPercentageFrom": 0, "fatPercentageTo": 0, "prepTimeFrom": 0, "prepTimeTo": 0, "pageNumber": 0, "maxResults": 0, "sortBy": "caloriesPerServingAscending", "region": "test"}, "expected": {"recipe_types": "Main Dish,Soup", "recipe_types_matchall": "false", "search_expression": "test", "must_have_images": "false", "calories.from": "0", "calories.to": "0", "carb_percentage.from": "0", "carb_percentage.to": "0", "protein_percentage.from": "0", "protein_percentage.to": "0", "fat_percentage.from": "0", "fat_percentage.to": "0", "prep_time.from": "0", "prep_time.to": "0", "page_number": "0", "max_results": "0", "sort_by": "caloriesPerServingAscending", "region": "test"}},
-  {"docPath": "v2/food_entries.get", "name": "get_user_food_entries_v2", "method": "food_entries.get.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"date": "1970-01-01", "foodEntryId": "1"}, "expected": {"date": "0", "food_entry_id": "1"}},
-  {"docPath": "v2/weights.get_month", "name": "get_weight_month_v2", "method": "weights.get_month.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"date": "1970-01-01"}, "expected": {"date": "0"}},
+  {"docPath": "v2/recipe.get", "name": "get_recipe", "method": "recipe.get.v2", "httpMethod": "GET", "userAuth": false, "required": ["recipeId"], "args": {"recipeId": "1", "region": "test"}, "expected": {"recipe_id": "1", "region": "test"}},
+  {"docPath": "v3/recipes.search", "name": "search_recipes", "method": "recipes.search.v3", "httpMethod": "GET", "userAuth": false, "required": [], "args": {"recipeTypes": ["Main Dish", "Soup"], "recipeTypesMatchall": false, "searchExpression": "test", "mustHaveImages": false, "caloriesFrom": 0, "caloriesTo": 0, "carbPercentageFrom": 0, "carbPercentageTo": 0, "proteinPercentageFrom": 0, "proteinPercentageTo": 0, "fatPercentageFrom": 0, "fatPercentageTo": 0, "prepTimeFrom": 0, "prepTimeTo": 0, "pageNumber": 0, "maxResults": 0, "sortBy": "caloriesPerServingAscending", "region": "test"}, "expected": {"recipe_types": "Main Dish,Soup", "recipe_types_matchall": "false", "search_expression": "test", "must_have_images": "false", "calories.from": "0", "calories.to": "0", "carb_percentage.from": "0", "carb_percentage.to": "0", "protein_percentage.from": "0", "protein_percentage.to": "0", "fat_percentage.from": "0", "fat_percentage.to": "0", "prep_time.from": "0", "prep_time.to": "0", "page_number": "0", "max_results": "0", "sort_by": "caloriesPerServingAscending", "region": "test"}},
+  {"docPath": "v2/food_entries.get", "name": "get_user_food_entries", "method": "food_entries.get.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"date": "1970-01-01", "foodEntryId": "1"}, "expected": {"date": "0", "food_entry_id": "1"}},
+  {"docPath": "v2/weights.get_month", "name": "get_weight_month", "method": "weights.get_month.v2", "httpMethod": "GET", "userAuth": true, "required": [], "args": {"date": "1970-01-01"}, "expected": {"date": "0"}},
+  {"docPath": "v1/foods.search", "name": "search_foods", "method": "foods.search", "httpMethod": "GET", "userAuth": false, "required": ["searchExpression"], "args": {"searchExpression": "test", "pageNumber": 0, "maxResults": 0, "genericDescription": "weight", "region": "UA", "language": "uk"}, "expected": {"search_expression": "test", "page_number": "0", "max_results": "0", "generic_description": "weight", "region": "UA", "language": "uk"}},
+  {"docPath": "v1/profile.get", "name": "get_user_profile", "method": "profile.get", "httpMethod": "GET", "userAuth": true, "required": [], "args": {}, "expected": {}},
 ];
 
 test("tool catalog covers every catalog navigation operation exactly once", () => {
-  assert.equal(fixtures.length, 44);
+  assert.equal(fixtures.length, 46);
   assert.deepEqual(toolCatalog.map((op) => [op.docPath, op.name]), fixtures.map((f) => [f.docPath, f.name]));
   assert.equal(new Set(dataTools.map((t) => t.name)).size, dataTools.length);
-  assert.equal(new Set(toolCatalog.map((t) => t.docPath)).size, 44);
-  assert.equal(dataTools.length, 55); // 48 latest operations + 6 retained legacy alternatives + check_auth_status
-  assert.deepEqual(dataTools.slice(-44), catalogTools);
-  const currentOperationPaths = ["v1/exercise_entries.commit_day", "v1/exercise_entries.save_template", "v1/exercise_entry.edit", "v1/feedback", "v1/food.add_favorite", "v1/food.delete_favorite", "v1/food_entries.copy", "v1/food_entries.copy_saved_meal", "v1/food_entry.create", "v1/food_entry.delete", "v1/food_entry.edit", "v1/natural.language.processing", "v1/profile.create", "v1/profile.get", "v1/profile.get_auth", "v1/recipe.add_favorite", "v1/recipe.delete_favorite", "v1/saved_meal.create", "v1/saved_meal.delete", "v1/saved_meal.edit", "v1/saved_meal_item.add", "v1/saved_meal_item.delete", "v1/saved_meal_item.edit", "v1/weight.update", "v2/exercise_entries.get", "v2/exercise_entries.get_month", "v2/exercises.get", "v2/food.create", "v2/food.find_id_for_barcode", "v2/food_brands.get", "v2/food_categories.get", "v2/food_entries.get", "v2/food_entries.get_month", "v2/food_sub_categories.get", "v2/foods.autocomplete", "v2/foods.get_favorites", "v2/foods.get_most_eaten", "v2/foods.get_recently_eaten", "v2/image.recognition", "v2/recipe.get", "v2/recipe_types.get", "v2/recipes.get_favorites", "v2/saved_meal_items.get", "v2/saved_meals.get", "v2/weights.get_month", "v3/recipes.search", "v5/food.get", "v5/foods.search"];
-  assert.deepEqual([...toolCatalog.map((op) => op.docPath), "v1/profile.get", "v1/food_entry.create", "v1/food_entry.edit", "v1/food_entry.delete"].sort(), currentOperationPaths);
+  assert.equal(new Set(toolCatalog.map((t) => t.docPath)).size, 46);
+  assert.equal(dataTools.length, 50); // 46 catalog operations + add/update/delete_food_entry + check_auth_status
+  assert.deepEqual(dataTools.slice(-46), catalogTools);
+  const currentOperationPaths = ["v1/exercise_entries.commit_day", "v1/exercise_entries.save_template", "v1/exercise_entry.edit", "v1/feedback", "v1/food.add_favorite", "v1/food.delete_favorite", "v1/food_entries.copy", "v1/food_entries.copy_saved_meal", "v1/food_entry.create", "v1/food_entry.delete", "v1/food_entry.edit", "v1/foods.search", "v1/natural.language.processing", "v1/profile.create", "v1/profile.get", "v1/profile.get_auth", "v1/recipe.add_favorite", "v1/recipe.delete_favorite", "v1/saved_meal.create", "v1/saved_meal.delete", "v1/saved_meal.edit", "v1/saved_meal_item.add", "v1/saved_meal_item.delete", "v1/saved_meal_item.edit", "v1/weight.update", "v2/exercise_entries.get", "v2/exercise_entries.get_month", "v2/exercises.get", "v2/food.create", "v2/food.find_id_for_barcode", "v2/food_brands.get", "v2/food_categories.get", "v2/food_entries.get", "v2/food_entries.get_month", "v2/food_sub_categories.get", "v2/foods.autocomplete", "v2/foods.get_favorites", "v2/foods.get_most_eaten", "v2/foods.get_recently_eaten", "v2/image.recognition", "v2/recipe.get", "v2/recipe_types.get", "v2/recipes.get_favorites", "v2/saved_meal_items.get", "v2/saved_meals.get", "v2/weights.get_month", "v3/recipes.search", "v5/food.get", "v5/foods.search"];
+  assert.deepEqual([...toolCatalog.map((op) => op.docPath), "v1/food_entry.create", "v1/food_entry.edit", "v1/food_entry.delete"].sort(), currentOperationPaths);
   for (const tool of catalogTools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
     for (const [name, schema] of Object.entries(tool.inputSchema.properties)) {
@@ -143,7 +145,7 @@ for (const fixture of fixtures) {
     const args = Object.fromEntries(fixture.required.map((key) => [key, fixture.args[key]]));
     if (fixture.name === "update_saved_meal_item") args.numberOfUnits = 0;
     if (fixture.name === "submit_food_feedback") args.issueTypeId = 4;
-    if (fixture.name === "get_user_food_entries_v2") args.foodEntryId = "1";
+    if (fixture.name === "get_user_food_entries") args.foodEntryId = "1";
     // Explicit undefined options are also absent, never strings like "undefined".
     for (const key of Object.keys(fixture.args)) if (!(key in args)) args[key] = undefined;
     await handleDataTool(client, fixture.name, args);
@@ -257,20 +259,23 @@ test("unknown names still return MethodNotFound", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("latest food entry v2 lookup accepts date or ID, omitting the other field", async () => {
+test("food entry lookup accepts date or ID, omitting the other field, and defaults to today's UTC date", async () => {
   const { client, calls } = setup();
-  const schema = catalogTools.find((tool) => tool.name === "get_user_food_entries_v2")!.inputSchema;
+  const schema = catalogTools.find((tool) => tool.name === "get_user_food_entries")!.inputSchema;
   assert.deepEqual(schema.required, []);
-  assert.deepEqual(schema.anyOf, [{ required: ["date"] }, { required: ["foodEntryId"] }]);
-  await assert.rejects(handleDataTool(client, "get_user_food_entries_v2", {}), { code: ErrorCode.InvalidParams });
-  await assert.rejects(handleDataTool(client, "get_user_food_entries_v2", { date: undefined, foodEntryId: undefined }), { code: ErrorCode.InvalidParams });
-  assert.equal(calls.length, 0);
-  await handleDataTool(client, "get_user_food_entries_v2", { date: "1970-01-01" });
-  await handleDataTool(client, "get_user_food_entries_v2", { foodEntryId: "123" });
-  assert.deepEqual(calls.map((call) => call.params), [
+  assert.equal("anyOf" in schema, false);
+  await handleDataTool(client, "get_user_food_entries", { date: "1970-01-01" });
+  await handleDataTool(client, "get_user_food_entries", { foodEntryId: "123" });
+  await handleDataTool(client, "get_user_food_entries", {});
+  await handleDataTool(client, "get_user_food_entries", { date: undefined, foodEntryId: undefined });
+  const today = Math.floor(Date.now() / 86400000);
+  assert.deepEqual(calls.slice(0, 2).map((call) => call.params), [
     { method: "food_entries.get.v2", date: "0", format: "json" },
     { method: "food_entries.get.v2", food_entry_id: "123", format: "json" },
   ]);
+  for (const call of calls.slice(2)) {
+    assert.ok(Math.abs(Number(call.params!.date) - today) <= 1);
+  }
 });
 
 test("exercise shift IDs reject noncanonical decimals before custom requirements can be bypassed", async () => {
@@ -308,17 +313,17 @@ test("latest food/recipe filters validate enums, ranges, and recipe type arrays"
     ["search_foods_v5", { foodType: "restaurant" }],
     ["search_foods_v5", { maxResults: 51 }],
     ["search_foods_v5", { pageNumber: -1 }],
-    ["search_recipes_v3", { recipeTypes: "Soup" }],
-    ["search_recipes_v3", { recipeTypes: [1] }],
-    ["search_recipes_v3", { recipeTypesMatchall: "false" }],
-    ["search_recipes_v3", { caloriesFrom: "0" }],
-    ["search_recipes_v3", { prepTimeTo: 1.5 }],
-    ["search_recipes_v3", { sortBy: "popular" }],
-    ["search_recipes_v3", { maxResults: 51 }],
-    ["get_food_v5", { foodId: "1", includeFoodAttributes: 1 }],
+    ["search_recipes", { recipeTypes: "Soup" }],
+    ["search_recipes", { recipeTypes: [1] }],
+    ["search_recipes", { recipeTypesMatchall: "false" }],
+    ["search_recipes", { caloriesFrom: "0" }],
+    ["search_recipes", { prepTimeTo: 1.5 }],
+    ["search_recipes", { sortBy: "popular" }],
+    ["search_recipes", { maxResults: 51 }],
+    ["get_food", { foodId: "1", includeFoodAttributes: 1 }],
   ] as const) await assert.rejects(handleDataTool(client, name, args), { code: ErrorCode.InvalidParams });
   assert.equal(calls.length, 0);
-  await handleDataTool(client, "search_recipes_v3", { recipeTypes: [], recipeTypesMatchall: false, caloriesFrom: 0, maxResults: 50 });
+  await handleDataTool(client, "search_recipes", { recipeTypes: [], recipeTypesMatchall: false, caloriesFrom: 0, maxResults: 50 });
   assert.deepEqual(calls[0].params, {
     method: "recipes.search.v3", recipe_types: "", recipe_types_matchall: "false", "calories.from": "0", max_results: "50", format: "json",
   });

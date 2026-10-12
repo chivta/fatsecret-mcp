@@ -162,10 +162,10 @@ Once authenticated, you can use all available tools:
 #### User Data (Requires Authentication)
 
 - `get_user_profile`: Get the authenticated user's profile
-- `get_user_food_entries`: Get food diary entries for a specific date
-- `add_food_entry`: Add a food entry to the user's diary
+- `get_user_food_entries`: Get the diary entries of a day (or one entry) with per-meal totals
+- `add_food_entry`: Add a food to the diary and get the created entry back
 - `delete_food_entry`: Delete a food entry from the user's diary
-- `update_food_entry`: Update a food entry in the user's diary
+- `update_food_entry`: Change the amount, serving, meal or name of a diary entry
 
 #### Utility
 
@@ -210,41 +210,27 @@ Check current authentication status.
 
 #### `search_foods`
 
-Search for foods in the FatSecret database.
+Search foods by name (`foods.search`). This is the only food search available on the Basic plan and it matches English names only. `foods.food` is always an array (`[]` for no results).
 
 **Parameters:**
 
 - `searchExpression` (string, required): Search term
-- `pageNumber` (number, optional): Page number (default: 0)
-- `maxResults` (number, optional): Max results per page (default: 20)
+- `pageNumber` (integer, optional): Zero-based page
+- `maxResults` (integer, optional): Max results per page (default: 20, max 50)
+- `genericDescription` (`weight` | `portion`, optional), `region`, `language` (strings, optional): Premier plan features
 
 #### `get_food`
 
-Get detailed information about a specific food.
+Get a food with its servings (`food.get.v5`). `food.servings.serving` is always an array. Each serving has `number_of_units` and `measurement_description` (the unit the number is counted in: g, ml, bar, cup, serving), its nutrition for that amount, and `kcal_per_unit` (calories / number_of_units). A serving with `loggable: false` (`serving_id` "0") is a derived per-100 reference and cannot be logged.
 
 **Parameters:**
 
 - `foodId` (string, required): FatSecret food ID
+- optional `includeSubCategories`, `includeFoodImages`, `includeFoodAttributes`, `flagDefaultServing`, `region`, `language`
 
 ### Recipe Database Tools
 
-#### `search_recipes`
-
-Search for recipes in the FatSecret database.
-
-**Parameters:**
-
-- `searchExpression` (string, required): Search term
-- `pageNumber` (number, optional): Page number (default: 0)
-- `maxResults` (number, optional): Max results per page (default: 20)
-
-#### `get_recipe`
-
-Get detailed information about a specific recipe.
-
-**Parameters:**
-
-- `recipeId` (string, required): FatSecret recipe ID
+`search_recipes` (`recipes.search.v3`) and `get_recipe` (`recipe.get.v2`) are documented with their full parameter tables below.
 
 ### User Data Tools (Requires Authentication)
 
@@ -254,27 +240,43 @@ Get the authenticated user's profile information.
 
 #### `get_user_food_entries`
 
-Get user's food diary entries for a specific date.
+Get the diary entries of one day (`date`) or one entry (`foodEntryId`) with `food_entries.get.v2`. With neither argument it returns today's entries by UTC date. `food_entries.food_entry` is always an array (`[]` for an empty day). The result has a sibling `totals`: `calories`, `protein`, `fat`, `carbohydrate` (numbers, 2 decimals) plus `by_meal` with the same four values per meal present (lowercase meal names).
 
 **Parameters:**
 
-- `date` (string, optional): Date in YYYY-MM-DD format (default: today)
+- `date` (string, optional): YYYY-MM-DD. Default: today in UTC; pass it explicitly
+- `foodEntryId` (string, optional): One entry by id
 
 #### `add_food_entry`
 
-Add a food entry to the user's diary.
+Add a food to the diary and return the created entry as read back from FatSecret (`food_entry_description`, calories, protein, fat, carbohydrate), so the logged amount can be checked at once. Give the amount in exactly one of two ways.
+
+1. `amount` + `unit` (`g` or `ml`): the server picks a serving of the food (never the derived serving "0") whose `measurement_description` equals the unit, or else one whose metric unit matches, and converts the amount.
+2. `servingId` + `numberOfUnits`: for counted servings, or when you chose the serving yourself.
 
 **Parameters:**
 
 - `foodId` (string, required): FatSecret food ID
-- `servingId` (string, required): Serving ID for the food
-- `quantity` (number, required): Quantity of the serving
-- `mealType` (string, required): Meal type (breakfast, lunch, dinner, other)
-- `date` (string, optional): Date in YYYY-MM-DD format (default: today)
+- `meal` (string, required): breakfast, lunch, dinner or other
+- `date` (string, optional): YYYY-MM-DD. Default: today in UTC; pass it explicitly
+- `foodEntryName` (string, optional): Name shown in the diary (default: the food's name). Needed for foods `food.get` cannot load (some non-US foods logged from the mobile app)
+- `amount` (number, optional) and `unit` (`g` | `ml`): way 1
+- `servingId` (string, optional) and `numberOfUnits` (number, optional): way 2. Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5.
+- `force` (boolean, optional): way 2 only. `numberOfUnits` under 5 on a g/ml serving is rejected (60 g typed as 0.6 would log 0.6 g); `force: true` sends it anyway
+
+```
+Tool: add_food_entry
+- foodId: "3286"
+- meal: "breakfast"
+- amount: 60
+- unit: "g"
+```
+
+If reading the entry back fails, the call still reports success with the `food_entry_id`; do not add it again.
 
 #### `delete_food_entry`
 
-Delete a food entry from the user's diary.
+Delete a diary entry by its `food_entry_id` (from `get_user_food_entries`). Cannot be undone.
 
 **Parameters:**
 
@@ -282,35 +284,45 @@ Delete a food entry from the user's diary.
 
 #### `update_food_entry`
 
-Update a food entry in the user's diary. At least one optional update field must be provided. Omitted fields remain unchanged; the entry's food ID and date cannot be updated.
+Change a diary entry in place (same `food_entry_id`): amount, serving, meal or name. The food and the date cannot be changed. At least one of `foodEntryName`, `servingId`, `numberOfUnits`, `meal` is required. Returns the updated entry with recalculated calories. When `numberOfUnits` or `servingId` is given, the same g/ml guard as in `add_food_entry` applies (skipped when the food cannot be loaded).
 
 **Parameters:**
 
 - `foodEntryId` (string, required): Food entry ID retrieved by `get_user_food_entries`
 - `foodEntryName` (string, optional): Name shown in the diary
 - `servingId` (string, optional): Serving ID for the food
-- `quantity` (number, optional): Quantity of the serving
-- `mealType` (string, optional): Meal type (breakfast, lunch, dinner, other)
+- `numberOfUnits` (number, optional): Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5.
+- `meal` (string, optional): breakfast, lunch, dinner or other
+- `force` (boolean, optional): Allow fewer than 5 g or ml on a g/ml serving
+
+```
+Tool: update_food_entry
+- foodEntryId: "25075869007"
+- numberOfUnits: 250
+```
 
 ## Full Platform operation coverage
 
-Both stdio and HTTP expose the same **55 data tools**: **48 current Platform operations**,
-**6 retained legacy-version alternatives**, and `check_auth_status`. The declarative catalog
-contains 44 new tools; 10 original API tools remain unchanged. Coverage is based on the current
+Both stdio and HTTP expose the same **50 data tools**: 46 declarative catalog tools and the
+hand-written `add_food_entry`, `update_food_entry`, `delete_food_entry` and `check_auth_status`.
+Each FatSecret concept has one tool, on the newest method version that works on the Basic plan.
+Coverage is based on the current
 [official guides navigation](https://platform.fatsecret.com/docs/guides) and its linked operation
-pages (all fetched during implementation). The redundant `v1/foods.search` link is covered by
-the retained `search_foods` tool. The table below identifies the tool for each **latest** version.
-Existing tools keep their names, inputs, defaults, response formatting, and methods; six additive
-versioned tools expose the newer search filters and response formats without breaking compatibility.
+pages. The table below identifies the tool for each operation.
 Tools use the latest documented method-based API where available, and documented path endpoints otherwise.
+Every response is JSON in which each `*date_int` day number (`date_int`, `from_date_int`,
+`last_weight_date_int`) has an ISO sibling (`date`, `from_date`, `last_weight_date`) as `YYYY-MM-DD`.
 
 ### Access and input conventions
 
 - **App** means consumer-only OAuth1 signing with the configured Client ID/Secret. **User**
   additionally requires the configured OAuth1 access token/secret. There is no new configuration
   or OAuth2 dependency. Feature availability still depends on your FatSecret account's permissions.
-- Barcode lookup, autocomplete, brands/categories/subcategories, feedback, NLP/image recognition,
-  food creation, and `search_foods_v5` require Premier or the corresponding feature entitlement. Localization
+- **Premier-only tools** (a Basic key answers FatSecret error 10 "Unknown method"; their descriptions
+  start with "[FatSecret Premier plan only ...]" and the error says so): `search_foods_v5`,
+  `autocomplete_foods`, `find_food_by_barcode`, `get_food_brands`, `get_food_categories`,
+  `get_food_sub_categories`, `create_food`, `process_natural_language`, `recognize_food_image`,
+  `submit_food_feedback`. Localization
   parameters/features also require Premier access where marked in the official pages. Autocomplete
   v2 only supports the default region/language combination; `maxResults` cannot exceed 10.
 - New tools validate camelCase arguments, types, enums, real calendar dates, and documented
@@ -357,11 +369,8 @@ Tools use the latest documented method-based API where available, and documented
   its serving cannot change. A first `update_weight` requires `goalWeightKg` and
   `currentHeightCm` in addition to `currentWeightKg` (FatSecret checks existing profile state).
   Weight tracking information is not a substitute for professional medical evaluation.
-- `get_user_food_entries_v2` accepts `date` or `foodEntryId` (at least one is required).
-  Its schema/runtime deliberately follow the official **alternate-lookup description**, rather
-  than requiring both fields as the contradictory table suggests. Omitted fields are not sent;
-  no local today default is invented for an empty lookup.
-- `search_recipes_v3` accepts `recipeTypes` string arrays from `get_recipe_types`;
+- `get_user_food_entries` accepts `date` or `foodEntryId`; with neither it uses today's UTC date.
+- `search_recipes` accepts `recipeTypes` string arrays from `get_recipe_types`;
   `recipeTypesMatchall` controls all-vs-any matching. Integer nutrition/time range inputs such as
   `caloriesFrom` and `prepTimeTo` map to the documented dotted wire keys (`calories.from`,
   `prep_time.to`). Search limits are at most 50; optional `searchExpression` may be omitted.
@@ -380,12 +389,13 @@ Tools use the latest documented method-based API where available, and documented
 | [v1/food.delete_favorite](https://platform.fatsecret.com/docs/v1/food.delete_favorite) | `delete_favorite_food` | `food.delete_favorite` | User |
 | [v1/food_entries.copy](https://platform.fatsecret.com/docs/v1/food_entries.copy) | `copy_food_entries` | `food_entries.copy` | User |
 | [v1/food_entries.copy_saved_meal](https://platform.fatsecret.com/docs/v1/food_entries.copy_saved_meal) | `copy_saved_meal_to_diary` | `food_entries.copy_saved_meal` | User |
-| [v1/food_entry.create](https://platform.fatsecret.com/docs/v1/food_entry.create) | `add_food_entry` (existing) | `food_entry.create` | User |
-| [v1/food_entry.delete](https://platform.fatsecret.com/docs/v1/food_entry.delete) | `delete_food_entry` (existing) | `food_entry.delete` | User |
-| [v1/food_entry.edit](https://platform.fatsecret.com/docs/v1/food_entry.edit) | `update_food_entry` (existing) | `food_entry.edit` | User |
+| [v1/food_entry.create](https://platform.fatsecret.com/docs/v1/food_entry.create) | `add_food_entry` | `food_entry.create` | User |
+| [v1/food_entry.delete](https://platform.fatsecret.com/docs/v1/food_entry.delete) | `delete_food_entry` | `food_entry.delete` | User |
+| [v1/food_entry.edit](https://platform.fatsecret.com/docs/v1/food_entry.edit) | `update_food_entry` | `food_entry.edit` | User |
+| [v1/foods.search](https://platform.fatsecret.com/docs/v1/foods.search) | `search_foods` | `foods.search` | App |
 | [v1/natural.language.processing](https://platform.fatsecret.com/docs/v1/natural.language.processing) | `process_natural_language` | `POST /rest/natural-language-processing/v1` | App |
 | [v1/profile.create](https://platform.fatsecret.com/docs/v1/profile.create) | `create_profile` | `profile.create` | App |
-| [v1/profile.get](https://platform.fatsecret.com/docs/v1/profile.get) | `get_user_profile` (existing) | `profile.get` | User |
+| [v1/profile.get](https://platform.fatsecret.com/docs/v1/profile.get) | `get_user_profile` | `profile.get` | User |
 | [v1/profile.get_auth](https://platform.fatsecret.com/docs/v1/profile.get_auth) | `get_profile_auth` | `GET /rest/profile/auth/v1` | App |
 | [v1/recipe.add_favorite](https://platform.fatsecret.com/docs/v1/recipe.add_favorite) | `add_favorite_recipe` | `recipe.add_favorite` | User |
 | [v1/recipe.delete_favorite](https://platform.fatsecret.com/docs/v1/recipe.delete_favorite) | `delete_favorite_recipe` | `recipe.delete_favorite` | User |
@@ -403,7 +413,7 @@ Tools use the latest documented method-based API where available, and documented
 | [v2/food.find_id_for_barcode](https://platform.fatsecret.com/docs/v2/food.find_id_for_barcode) | `find_food_by_barcode` | `food.find_id_for_barcode.v2` | App |
 | [v2/food_brands.get](https://platform.fatsecret.com/docs/v2/food_brands.get) | `get_food_brands` | `food_brands.get.v2` | App |
 | [v2/food_categories.get](https://platform.fatsecret.com/docs/v2/food_categories.get) | `get_food_categories` | `food_categories.get.v2` | App |
-| [v2/food_entries.get](https://platform.fatsecret.com/docs/v2/food_entries.get) | `get_user_food_entries_v2` | `food_entries.get.v2` | User |
+| [v2/food_entries.get](https://platform.fatsecret.com/docs/v2/food_entries.get) | `get_user_food_entries` | `food_entries.get.v2` | User |
 | [v2/food_entries.get_month](https://platform.fatsecret.com/docs/v2/food_entries.get_month) | `get_food_entries_month` | `food_entries.get_month.v2` | User |
 | [v2/food_sub_categories.get](https://platform.fatsecret.com/docs/v2/food_sub_categories.get) | `get_food_sub_categories` | `food_sub_categories.get.v2` | App |
 | [v2/foods.autocomplete](https://platform.fatsecret.com/docs/v2/foods.autocomplete) | `autocomplete_foods` | `foods.autocomplete.v2` | App |
@@ -411,39 +421,22 @@ Tools use the latest documented method-based API where available, and documented
 | [v2/foods.get_most_eaten](https://platform.fatsecret.com/docs/v2/foods.get_most_eaten) | `get_most_eaten_foods` | `foods.get_most_eaten.v2` | User |
 | [v2/foods.get_recently_eaten](https://platform.fatsecret.com/docs/v2/foods.get_recently_eaten) | `get_recently_eaten_foods` | `foods.get_recently_eaten.v2` | User |
 | [v2/image.recognition](https://platform.fatsecret.com/docs/v2/image.recognition) | `recognize_food_image` | `POST /rest/image-recognition/v2` | App |
-| [v2/recipe.get](https://platform.fatsecret.com/docs/v2/recipe.get) | `get_recipe_v2` | `recipe.get.v2` | App |
+| [v2/recipe.get](https://platform.fatsecret.com/docs/v2/recipe.get) | `get_recipe` | `recipe.get.v2` | App |
 | [v2/recipe_types.get](https://platform.fatsecret.com/docs/v2/recipe_types.get) | `get_recipe_types` | `recipe_types.get.v2` | App |
-| [v2/recipes.get_favorites](https://platform.fatsecret.com/docs/v2/recipes.get_favorites) | `get_favorite_recipes` | `recipe.get_favorites.v2` | User |
+| [v2/recipes.get_favorites](https://platform.fatsecret.com/docs/v2/recipes.get_favorites) | `get_favorite_recipes` | `recipes.get_favorites.v2` | User |
 | [v2/saved_meal_items.get](https://platform.fatsecret.com/docs/v2/saved_meal_items.get) | `get_saved_meal_items` | `saved_meal_items.get.v2` | User |
 | [v2/saved_meals.get](https://platform.fatsecret.com/docs/v2/saved_meals.get) | `get_saved_meals` | `saved_meals.get.v2` | User |
-| [v2/weights.get_month](https://platform.fatsecret.com/docs/v2/weights.get_month) | `get_weight_month_v2` | `weights.get_month.v2` | User |
-| [v3/recipes.search](https://platform.fatsecret.com/docs/v3/recipes.search) | `search_recipes_v3` | `recipes.search.v3` | App |
-| [v5/food.get](https://platform.fatsecret.com/docs/v5/food.get) | `get_food_v5` | `food.get.v5` | App |
+| [v2/weights.get_month](https://platform.fatsecret.com/docs/v2/weights.get_month) | `get_weight_month` | `weights.get_month.v2` | User |
+| [v3/recipes.search](https://platform.fatsecret.com/docs/v3/recipes.search) | `search_recipes` | `recipes.search.v3` | App |
+| [v5/food.get](https://platform.fatsecret.com/docs/v5/food.get) | `get_food` | `food.get.v5` | App |
 | [v5/foods.search](https://platform.fatsecret.com/docs/v5/foods.search) | `search_foods_v5` | `foods.search.v5` | App |
 
 The `recipes.get_favorites` page documents the singular method
-`recipe.get_favorites.v2`, which is used exactly as written. The `profile.get_auth`
+`recipe.get_favorites.v2`, which a live key answers with error 10; the plural `recipes.get_favorites.v2` is used. The `profile.get_auth`
 page's method table conflicts with its purpose (`profile.get`), so the unambiguous
 `GET /rest/profile/auth/v1` endpoint is used instead. No operation is silently omitted.
 
-`get_weight_month` (existing) accepts optional string `date` in `YYYY-MM-DD` format,
-defaulting to the current month, and calls `weights.get_month` with user authentication.
-
-### Retained legacy-version alternatives
-
-These six compatibility tools retain their original inputs and unversioned methods; prefer
-the versioned alternatives for all current filters and latest response shapes.
-
-| Legacy tool | Preserved method | Latest additive tool |
-| --- | --- | --- |
-| `get_food` | `food.get` | `get_food_v5` |
-| `search_foods` | `foods.search` | `search_foods_v5` |
-| `get_recipe` | `recipe.get` | `get_recipe_v2` |
-| `search_recipes` | `recipes.search` | `search_recipes_v3` |
-| `get_user_food_entries` | `food_entries.get` | `get_user_food_entries_v2` |
-| `get_weight_month` | `weights.get_month` | `get_weight_month_v2` |
-
-### New tools and parameters
+### Tool reference
 
 Parameters below use the MCP camelCase spelling; wire names and detailed units are also
 provided in each tool's discoverable input schema. All unmarked parameters are optional.
@@ -454,7 +447,7 @@ Saves the default exercise entries for the user on a nominated date.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `save_exercise_template`
 
@@ -463,7 +456,7 @@ Saves a day's exercise entries as the template for the nominated weekdays (days 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `days` | integer | yes | The days of the week specified as bits with Sunday being the 1st bit and Saturday being the last and then converted to an Int. For example Tuesday and Thursday would be represented as 00010100 in bits or 20 in Int where Tuesday is the 3rd bit from the right and Thursday being the 5th. Must be between 0 and 128 Maximum: 128. |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `update_exercise_entry`
 
@@ -474,7 +467,7 @@ Records a change to a user's exercise diary entry for a nominated date. All chan
 | `shiftToId` | string | yes | ID of the exercise type to shift to (canonical decimal string) |
 | `shiftFromId` | string | yes | ID of the exercise type to shift from (canonical decimal string) |
 | `minutes` | integer | yes | Duration in minutes |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 | `shiftToName` | string | no | Only required if shift_to_id is 0 (exercise type "Other"). This is the name of the new custom exercise type to shift to |
 | `shiftFromName` | string | no | Only required if shift_from_id is 0 (exercise type "Other"). This is the name of the custom exercise type to shift from |
 | `kcal` | integer | no | Only required if shift_to_id is 0 (exercise type "Other"). This is the total number of kcals burned for this exercise |
@@ -507,7 +500,7 @@ Add a food to a user's favorite according to the parameters specified.
 | --- | --- | --- | --- |
 | `foodId` | string | yes | Unique food identifier |
 | `servingId` | string | no | Unique serving identifier |
-| `numberOfUnits` | number | no | Number of units in this standard serving size. For instance, if the serving description is "2 tablespoons" the number of units is "2", while if the serving size is "1 cup" the number of units is "1". Please note that this is only applicable for when food_type is "Generic" whereas for "Brand" the number of units will always be "1" |
+| `numberOfUnits` | number | no | Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5. |
 
 #### `delete_favorite_food`
 
@@ -517,7 +510,7 @@ Deletes the specified food from the user's favorite.
 | --- | --- | --- | --- |
 | `foodId` | string | yes | Unique food identifier |
 | `servingId` | string | no | Unique serving identifier |
-| `numberOfUnits` | number | no | Number of units in this standard serving size. For instance, if the serving description is "2 tablespoons" the number of units is "2", while if the serving size is "1 cup" the number of units is "1". Please note that this is only applicable for when food_type is "Generic" whereas for "Brand" the number of units will always be "1" |
+| `numberOfUnits` | number | no | Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5. |
 
 #### `copy_food_entries`
 
@@ -537,7 +530,7 @@ Copies the food entries for a specified saved meal to a specified meal.
 | --- | --- | --- | --- |
 | `savedMealId` | string | yes | Unique saved meal identifier |
 | `meal` | string | yes | Type of meal eaten. Valid meal types are "breakfast", "lunch", "dinner" and "other" Values: `breakfast`, `lunch`, `dinner`, `other`. |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `process_natural_language`
 
@@ -622,7 +615,7 @@ Adds a food to a user's saved meal according to the parameters specified. The re
 | `foodId` | string | yes | Unique food identifier |
 | `savedMealItemName` | string | yes | New name of the saved meal item |
 | `servingId` | string | yes | Unique serving identifier |
-| `numberOfUnits` | number | yes | Number of units in this standard serving size. For instance, if the serving description is "2 tablespoons" the number of units is "2", while if the serving size is "1 cup" the number of units is "1". Please note that this is only applicable for when food_type is "Generic" whereas for "Brand" the number of units will always be "1" |
+| `numberOfUnits` | number | yes | Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5. |
 
 #### `delete_saved_meal_item`
 
@@ -640,7 +633,7 @@ Updates a saved meal item's name or number of units; at least one update require
 | --- | --- | --- | --- |
 | `savedMealItemId` | string | yes | Unique saved meal item identifier |
 | `savedMealItemName` | string | no | New name of the saved meal item |
-| `numberOfUnits` | number | no | Number of units in this standard serving size. For instance, if the serving description is "2 tablespoons" the number of units is "2", while if the serving size is "1 cup" the number of units is "1". Please note that this is only applicable for when food_type is "Generic" whereas for "Brand" the number of units will always be "1" |
+| `numberOfUnits` | number | no | Amount in units of the serving's measurement_description (see get_food), not a count of servings. On a serving measured in g or ml it is grams or ml: 250 g on the "100 g" serving is 250, never 2.5. On a serving measured in bar, cup, piece or serving it is a count: half a bar is 0.5. |
 
 At least one field is required: `savedMealItemName`, `numberOfUnits`.
 
@@ -651,7 +644,7 @@ Records a user's weight for a nominated date. First weigh-in also requires goalW
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `currentWeightKg` | number | yes | Current weight of the user in kilograms |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 | `weightType` | string | no | Weight measurement type for this user profile. Valid types are "kg" and "lb" (default value is "kg") Values: `kg`, `lb`. |
 | `heightType` | string | no | Height measurement type for this user profile. Valid types are "cm" and "inch" (default value is "cm") Values: `cm`, `inch`. |
 | `goalWeightKg` | number | no | User's goal weight in kilograms |
@@ -664,7 +657,7 @@ Returns the daily exercise entries for the user on a nominated date.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `get_exercise_month`
 
@@ -672,7 +665,7 @@ Returns the summary estimated daily calories expended for a user's exercise diar
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `get_exercises`
 
@@ -758,7 +751,7 @@ Returns summary daily nutritional information for a user's food diary entries fo
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | yes | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 #### `get_food_sub_categories`
 
@@ -845,9 +838,9 @@ Returns saved meals for the specified user.
 | --- | --- | --- | --- |
 | `meal` | string | no | Type of meal eaten. Valid meal types are "breakfast", "lunch", "dinner" and "other" Values: `breakfast`, `lunch`, `dinner`, `other`. |
 
-#### `get_food_v5`
+#### `get_food`
 
-Get detailed v5 food data, including standardized servings, with optional localization/images/attributes. Derived serving ID 0 cannot be used for food_entry.create.
+See the description above: servings are always an array with `kcal_per_unit`; `loggable: false` marks the derived serving "0".
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -861,7 +854,7 @@ Get detailed v5 food data, including standardized servings, with optional locali
 
 #### `search_foods_v5`
 
-Search foods with v5 detailed nutrition, brand/generic filtering, and optional localization/images/attributes. Requires Premier access.
+Premier only. Search foods with v5 detailed nutrition, brand/generic filtering, and optional localization/images/attributes. On a Basic key use `search_foods`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -876,7 +869,7 @@ Search foods with v5 detailed nutrition, brand/generic filtering, and optional l
 | `region` | string | no | Results will be filtered by region. E.G.: "FR" returns results from France. If not specified this will default to "US" (United States). Click here for full documentation on localization. |
 | `language` | string | no | (Ignored unless region is also specified) Results will be in the specified language. E.G.: "fr" returns results in French |
 
-#### `get_recipe_v2`
+#### `get_recipe`
 
 Get recipe v2 details including grams per portion, with optional Premier region localization.
 
@@ -885,7 +878,7 @@ Get recipe v2 details including grams per portion, with optional Premier region 
 | `recipeId` | string | yes | Unique recipe identifier |
 | `region` | string | no | Results will be filtered by region. E.G.: "FR" returns results from France. If not specified this will default to "US" (United States). Click here for full documentation on localization. |
 
-#### `search_recipes_v3`
+#### `search_recipes`
 
 Search recipes with v3 recipe-type, image, nutrition/time filters, sorting, and optional Premier region localization.
 
@@ -910,24 +903,22 @@ Search recipes with v3 recipe-type, image, nutrition/time filters, sorting, and 
 | `sortBy` | string | no | This option will order results. Valid options include: newest, oldest, caloriesPerServingAscending, caloriesPerServingDescending. When not explicitly set, the ordering will be returned by newest Values: `newest`, `oldest`, `caloriesPerServingAscending`, `caloriesPerServingDescending`. |
 | `region` | string | no | Results will be filtered by region. E.G.: "FR" returns results from France. If not specified this will default to "US" (United States). Click here for full documentation on localization. |
 
-#### `get_user_food_entries_v2`
+#### `get_user_food_entries` (parameters)
 
-Get v2 diary entries by calendar date or a single foodEntryId. Supply at least one lookup field; the description documents alternate lookup despite both rows being marked Required.
+See above. With neither `date` nor `foodEntryId`, today's UTC date is used.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 | `foodEntryId` | string | no | Unique identifier of the food diary entry |
 
-At least one field is required: `date`, `foodEntryId`.
+#### `get_weight_month`
 
-#### `get_weight_month_v2`
-
-Get monthly weight entries using v2 consistent array formatting. Omitted date defaults to the current day on FatSecret.
+Get monthly weight entries (`weights.get_month.v2`). Omitted date defaults to the current day on FatSecret.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Number of days since January 1, 1970 (default value is the current day) |
+| `date` | string | no | YYYY-MM-DD calendar date, converted to days since 1970-01-01. Default: FatSecret's current day; pass it explicitly to avoid timezone surprises. |
 
 ## Example Workflow
 
@@ -971,9 +962,9 @@ Get monthly weight entries using v2 consistent array formatting. Omitted date de
    ```
    Tool: add_food_entry
    - foodId: "12345"
-   - servingId: "67890"
-   - quantity: 1
-   - mealType: "lunch"
+   - meal: "lunch"
+   - amount: 150
+   - unit: "g"
    ```
 
 ## Configuration Storage
